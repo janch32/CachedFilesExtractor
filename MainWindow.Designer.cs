@@ -112,7 +112,8 @@
             // 
             // DirectoryBrowser
             // 
-            this.DirectoryBrowser.RootFolder = System.Environment.SpecialFolder.ApplicationData;
+            this.DirectoryBrowser.RootFolder = System.Environment.SpecialFolder.UserProfile;
+            this.DirectoryBrowser.ShowNewFolderButton = false;
             // 
             // MainWindow
             // 
