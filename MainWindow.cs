@@ -17,35 +17,43 @@ namespace CachedFilesExtractor
             InitializeComponent();
         }
 
-        static string ChromeUserDataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google\\Chrome\\User Data");
+        private static string SelectedPath { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google\\Chrome\\User Data");
         string[] SourceFiles = null;
         int SourceFilesIndex = 0;
         Dictionary<string, int> ParsedFormats = null;
 
+        private void LoadChromiumProfiles()
+        {
+            ProfileSelect.Items.Clear();
 
-		void LoadChromeProfiles()
-		{
-			ProfileSelect.Items.Clear();
+            if (string.Equals(Path.GetFileName(SelectedPath), "cache", StringComparison.InvariantCultureIgnoreCase) || Directory.Exists(Path.Combine(SelectedPath, "Cache")))
+            {
+                // Uživatel zvolil cache adresář, nebo zvolil adresář, ve kterém se nachází cache adresíř.
+                ProfileSelect.Items.Add("Cache");
+            }
+            else
+            {
+                // Prohledávání podadresářů (Chrome profily).
+                foreach (var dir in Directory.GetDirectories(SelectedPath))
+                {
+                    if (Directory.Exists(Path.Combine(dir, "Cache")))
+                    {
+                        ProfileSelect.Items.Add(Path.GetFileName(dir));
+                    }
+                }
+            }
 
-			foreach (string folders in Directory.GetDirectories(ChromeUserDataPath))
-			{
-				if (Directory.Exists(Path.Combine(folders, "Cache")))
-				{
-					ProfileSelect.Items.Add(Path.GetFileName(folders));
-				}
-			}
+            ProfileSelect.SelectedIndex = 0;
+        }
 
-			ProfileSelect.SelectedIndex = 0;
-		}
-
-        static ImageFormat FileTryGetImageFormat(string filename)
+        private static ImageFormat FileTryGetImageFormat(string filename)
         {
             try
             {
-                var img = Image.FromFile(filename);
-                var format = img.RawFormat;
-                img.Dispose();
-                return format;
+                using (var img = Image.FromFile(filename))
+                {
+                    return img.RawFormat;
+                }
             }
             catch (Exception)
             {
@@ -53,29 +61,37 @@ namespace CachedFilesExtractor
             }
         }
 
-		void AllFilesLoaded()
-		{
-			Invoke(new Action(() => {
-				ProfileSelect.Enabled = true;
-				SaveButton.Enabled = true;
-			}));
-		}
+        void AllFilesLoaded()
+        {
+            Invoke(new Action(() =>
+            {
+                ProfileSelect.Enabled = true;
+                SaveButton.Enabled = true;
+            }));
+        }
 
-		void InvalidateStats()
-		{
-			Invoke(new Action(() => {
-				Stats.Invalidate();
-			}));
-		}
+        void InvalidateStats()
+        {
+            Invoke(new Action(() =>
+            {
+                Stats.Invalidate();
+            }));
+        }
 
-        static ImageFormatConverter FormatConverter = new ImageFormatConverter();
+        private string GetProfilePath()
+        {
+            var suffix = SelectedProfile == "Cache" ? SelectedProfile : Path.Combine(SelectedProfile, "Cache");
+            return Path.GetFileName(SelectedPath) == suffix ? SelectedPath : Path.Combine(SelectedPath, suffix);
+        }
+
+        private static readonly ImageFormatConverter FormatConverter = new ImageFormatConverter();
 
         private void GetFilesFromCache()
         {
-			try
+            try
             {
-			    string OutputFolder = "Záloha cache - " + SelectedProfile + " (" + DateTime.Now.ToFileTime() + ")";
-                SourceFiles = Directory.GetFiles(Path.Combine(ChromeUserDataPath, SelectedProfile, "Cache"));
+                string OutputFolder = "Záloha cache - " + SelectedProfile + " (" + DateTime.Now.ToFileTime() + ")";
+                SourceFiles = Directory.GetFiles(GetProfilePath());
                 ParsedFormats = new Dictionary<string, int>();
 
                 Directory.CreateDirectory(OutputFolder);
@@ -101,7 +117,8 @@ namespace CachedFilesExtractor
                     InvalidateStats();
                 }
             }
-            catch (Exception) {
+            catch (Exception)
+            {
                 // chyba při IO přístupu
             }
 
@@ -110,10 +127,10 @@ namespace CachedFilesExtractor
 
         private void SaveButtonClick(object sender, EventArgs e)
         {
-			ProfileSelect.Enabled = false;
-			SaveButton.Enabled = false;
-            
-			Thread t = new Thread(new ThreadStart(GetFilesFromCache));
+            ProfileSelect.Enabled = false;
+            SaveButton.Enabled = false;
+
+            Thread t = new Thread(new ThreadStart(GetFilesFromCache));
             t.Start();
         }
 
@@ -133,7 +150,7 @@ namespace CachedFilesExtractor
 
         private void DrawStats(object sender, PaintEventArgs e)
         {
-            Control c = (Control) sender;
+            Control c = (Control)sender;
             Graphics g = e.Graphics;
             int center = (c.Width - 150) / 2;
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -144,7 +161,7 @@ namespace CachedFilesExtractor
             float progress = (float)(SourceFilesIndex + 1) / SourceFiles.Length;
 
             g.FillPie(Brushes.LightGray, center, 6, 150, 150, -90, progress * 360);
-                
+
             if (ParsedFormats.Values.Count > 0)
             {
                 float celkem = -90;
@@ -158,12 +175,11 @@ namespace CachedFilesExtractor
 
             // Legenda 
 
-
             g.FillRectangle(Brushes.LightGray, 20, c.Height - DefaultFont.Height, 10, 10);
             g.DrawString((SourceFilesIndex + 1) + " prohledaných souborů", DefaultFont, Brushes.Black, 40, c.Height - DefaultFont.Height);
 
             int i = 1;
-            foreach (var f in ParsedFormats.Keys)
+            foreach (var f in ParsedFormats.Keys.ToArray())
             {
                 i++;
                 g.FillRectangle(GetBrushByFormat(f), 20, c.Height - i * DefaultFont.Height, 10, 10);
@@ -173,7 +189,12 @@ namespace CachedFilesExtractor
 
         private void WindowLoad(object sender, EventArgs e)
         {
-            LoadChromeProfiles();
+            LoadChromiumProfiles();
+            CheckProfiles();
+        }
+
+        private void CheckProfiles()
+        {
             if (ProfileSelect.Items.Count < 1)
             {
                 MessageBox.Show("Žádné profily prohlížeče Google Chrome nenalezeny", "CacheToFile", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -181,10 +202,20 @@ namespace CachedFilesExtractor
             }
         }
 
-        string SelectedProfile = "";
+        private string SelectedProfile = "";
         private void ProfileSelectChange(object sender, EventArgs e)
         {
             SelectedProfile = (string)((ComboBox)sender).SelectedItem;
+        }
+
+        private void ChangeTarget_Click(object sender, EventArgs e)
+        {
+            if (DirectoryBrowser.ShowDialog() == DialogResult.OK)
+            {
+                SelectedPath = DirectoryBrowser.SelectedPath;
+                LoadChromiumProfiles();
+                CheckProfiles();
+            }
         }
     }
 }
